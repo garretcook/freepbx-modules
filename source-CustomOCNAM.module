@@ -1,0 +1,54 @@
+<?php
+
+class CustomOCNAM extends superfecta_base {
+
+    public $description = "https://www.opencnam.com This data source returns CNAM data for any NANPA phone number (any number that starts with +1).";
+    public $version_requirement = "2.11";
+    public $source_param = array(
+        'api_url' => array(
+                'description' => 'IP/URL of a the Open CNAM API',
+                'type' => 'text'
+        ),
+	'sid' => array(
+                'description' => 'sid for openCNAM (account required)',
+                'type' => 'text'
+        ),
+	'auth_token' => array(
+                'description' => 'auth_token for openCNAM (account required)',
+                'type' => 'text'
+        ),
+    );
+
+    function get_caller_id($thenumber, $run_param=array()) {
+
+        $caller_id = null;
+        $this->DebugPrint("Searching openCNAM via curl ... ");
+
+
+        $phoneNumber = preg_replace('/[^0-9]/','',$phoneNumber);
+        $areaCode = substr($phoneNumber, -10, 3);
+        $nextThree = substr($phoneNumber, -7, 3);
+        $lastFour = substr($phoneNumber, -4, 4);
+
+
+        $url = 'https://api.opencnam.com/v3/phone/';
+        $url = $run_param['api_url'];
+        $url .= $thenumber;
+        $url .= '?format=json';
+        $url .= '&account_sid='.$run_param['sid'];
+        $url .= '&auth_token='.$run_param['auth_token'];
+        $this->DebugPrint("Using curl  URL: $url\n");
+        exec("curl '$url'", $curl_lines);
+        $curl_retVal = join("\n",$curl_lines);
+        $this->DebugPrint("Curl Output: ".$curl_retVal);
+        $curl_json = json_decode($curl_retVal);
+        $this->DebugPrint("API Returned: ".print_r($curl_json,true)."\n");
+        $caller_id = $curl_json->{'name'};
+        $this->DebugPrint("Caller ID is: $caller_id\n");
+        return($caller_id);
+    }
+
+}
+
+
+?>

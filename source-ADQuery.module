@@ -1,0 +1,93 @@
+<?php
+
+class ADQuery extends superfecta_base {
+
+    public $description = "https://www.opencnam.com This data source returns CNAM data for any NANPA phone number (any number that starts with +1).";
+    public $version_requirement = "2.11";
+    public $source_param = array(
+        'domain_controller_IP' => array(
+                'description' => 'IP Address of a domain controller',
+                'type' => 'text'
+        ),
+	'backup_domain_controller_IP' => array(
+                'description' => 'IP Address of a secondary domain controller',
+                'type' => 'text'
+        ),
+	'username' => array(
+                'description' => 'AD User account with search privilege',
+                'type' => 'text'
+        ),
+	'base_dn' => array(
+                'description' => 'Base AD path from which to initiate the search.',
+                'type' => 'text'
+        ),
+	'password' => array(
+                'description' => 'AD User account password',
+                'type' => 'password',
+        ),
+    );
+
+    function get_caller_id($thenumber, $run_param=array()) {
+
+        $caller_id = null;
+        $this->DebugPrint("Searching Active Directory ... ");
+
+        $ldaphost = $run_param['domain_controller_IP'];
+        $ldapconn = ldap_connect($ldaphost)
+          or $this->DebugPrint("Could not connect to {$ldaphost}");
+
+        ldap_set_option($ldapconn, LDAP_OPT_PROTOCOL_VERSION, 3);
+        ldap_set_option($ldapconn, LDAP_OPT_REFERRALS, 0);
+
+        $bind = ldap_bind($ldapconn, $run_param['username'], $run_param['password']) or $this->DebugPrint("Could not bind to LDAP");
+        if ($bind) {
+                $filter = getFilter($thenumber, $this);
+                $search_result = ldap_search($ldapconn,$run_param['base_dn'],$filter, array("sn", "cn")) or die("");
+                $info = ldap_first_entry($ldapconn, $search_result); # or $this->DebugPrint('Could not get LDAP Entry');
+                $data = ldap_get_values($ldapconn, $info, 'cn') or $this->DebugPrint("Could not get LDAP Entry Value");
+                $caller_id = "$data[0]";
+                @ldap_close($ldapconn);
+        }
+
+	if (is_null($caller_id)) $this->DebugPrint("not found");
+        return($caller_id);
+    }
+
+}
+
+
+function getFilter($phoneNumber, $object) {
+    $phoneNumber = preg_replace('/[^0-9]/','',$phoneNumber);
+    $areaCode = substr($phoneNumber, -10, 3);
+    $nextThree = substr($phoneNumber, -7, 3);
+    $lastFour = substr($phoneNumber, -4, 4);
+
+    $filter_patterns = array();
+    array_push($filter_patterns,$phoneNumber);
+    array_push($filter_patterns,"($areaCode) $nextThree-$lastFour");
+    array_push($filter_patterns,"$areaCode-$nextThree-$lastFour");
+
+
+    $ldap_query_patterns = array();
+    array_walk($filter_patterns,
+                function($number, $index, $ldap_query_patterns) {
+                    $number = str_replace('(','\\28', $number);
+                    $number = str_replace(')','\\29', $number);
+                    foreach (array('mobile', 'telephoneNumber', 'homeTelephoneNumber') as $queryID) {
+                            array_push($ldap_query_patterns, "$queryID=$number");
+                    }
+                },
+                &$ldap_query_patterns
+        );
+
+    $object->DebugPrint("LDAP query patterns are: ".print_r($ldap_query_patterns,true));
+
+    $filter_query = "(".array_shift($ldap_query_patterns).")";
+    foreach ($ldap_query_patterns as $pattern) {
+        $filter_query = '(|'.$filter_query.'('.$pattern.'))';
+    }
+
+return $filter_query;
+}
+
+?>
